@@ -34,15 +34,34 @@ MY_CHANNEL = ChannelConfig(
 )
 
 
+def _ranged(kind, lo=None, hi=None, lo_open=False):
+    """argparse type: a number in [lo, hi] (or (lo, hi] with lo_open)."""
+    def check(value: str):
+        try:
+            v = kind(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"{value!r} is not a valid {kind.__name__}")
+        if lo is not None and (v <= lo if lo_open else v < lo):
+            raise argparse.ArgumentTypeError(f"must be {'>' if lo_open else '>='} {lo} (got {value})")
+        if hi is not None and v > hi:
+            raise argparse.ArgumentTypeError(f"must be <= {hi} (got {value})")
+        return v
+    return check
+
+
 def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Simulate YouTube channel growth and revenue")
     p.add_argument("--niche", choices=sorted(NICHE_CPMS), help="content niche (sets the CPM)")
-    p.add_argument("--subs", type=int, help="starting subscribers")
-    p.add_argument("--growth", type=float, help="monthly subscriber growth rate, e.g. 0.09")
-    p.add_argument("--videos", type=int, help="videos per month")
-    p.add_argument("--length", type=float, help="average view duration in minutes")
-    p.add_argument("--months", type=int, help="simulation horizon (default 36)")
-    p.add_argument("--monetized-share", type=float, help="share of views that carry ads (default 1.0)")
+    p.add_argument("--subs", type=_ranged(int, 0), help="starting subscribers (>= 0)")
+    p.add_argument("--growth", type=_ranged(float, -1, 10, lo_open=True),
+                   help="monthly subscriber growth rate, e.g. 0.09 (> -1)")
+    p.add_argument("--videos", type=_ranged(int, 1), help="videos per month (>= 1)")
+    p.add_argument("--length", type=_ranged(float, 0, lo_open=True), help="average video length in minutes")
+    p.add_argument("--retention", type=_ranged(float, 0, 1, lo_open=True),
+                   help="share of each video watched on average, 0-1 (default 0.40)")
+    p.add_argument("--months", type=_ranged(int, 1), help="simulation horizon in months (>= 1, default 36)")
+    p.add_argument("--monetized-share", type=_ranged(float, 0, 1),
+                   help="share of views that carry ads, 0-1 (default 1.0)")
     p.add_argument("--out", default="output")
     p.add_argument("--csv", action="store_true", help="export monthly results and niche comparison")
     p.add_argument("--no-charts", action="store_true")
@@ -52,7 +71,8 @@ def parse_args(argv=None) -> argparse.Namespace:
 def build_config(args) -> ChannelConfig:
     overrides = {k: v for k, v in {
         "niche": args.niche, "initial_subscribers": args.subs, "monthly_sub_growth_rate": args.growth,
-        "videos_per_month": args.videos, "avg_video_length_min": args.length, "months": args.months,
+        "videos_per_month": args.videos, "avg_video_length_min": args.length,
+        "avg_view_retention": args.retention, "months": args.months,
         "monetized_view_share": args.monetized_share,
     }.items() if v is not None}
     if "niche" in overrides:
@@ -69,7 +89,8 @@ def main(argv=None) -> int:
     print(f"Channel niche : {cfg.niche}")
     print(f"CPM           : ${cfg.cpm:.2f}  |  RPM: ${cfg.rpm:.2f}")
     print(f"Starting subs : {cfg.initial_subscribers:,}  |  growth {cfg.monthly_sub_growth_rate:.0%}/month")
-    print(f"Videos/month  : {cfg.videos_per_month}")
+    print(f"Videos/month  : {cfg.videos_per_month}  |  {cfg.avg_video_length_min:g} min, "
+          f"{cfg.avg_view_retention:.0%} watched on average")
 
     print("\n[1/3] Simulating channel growth...")
     df = simulate(cfg)

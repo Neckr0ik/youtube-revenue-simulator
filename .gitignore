@@ -1,7 +1,7 @@
-output/*.png
-output/*.csv
+output/
 __pycache__/
 *.pyc
+.pytest_cache/
 .env
 venv/
 .venv/
